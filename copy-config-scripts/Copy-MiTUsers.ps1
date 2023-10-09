@@ -27,7 +27,7 @@ param (
 
     [Parameter()]
     [string]
-    $DefaultPassword = 'abc123',
+    $NewPassword,
 
     [Parameter()]
     [switch]
@@ -67,6 +67,17 @@ $stats = [pscustomobject]@{
     error = 0
 }
 
+# Function to generate random passwords
+function New-RandomPassword  {
+    -join ( @(
+        ($lcase   = 'a'..'z')                   | Get-Random
+        ($ucase   = 'A'..'Z')                   | Get-Random
+        ($numeric = '0'..'9')                   | Get-Random
+        ($symbol  = '!@#$%^&*'.ToCharArray())   | Get-Random
+        ($lcase + $ucase + $numeric + $symbol)  | Get-Random -Count 10
+    ) | Get-Random -Shuffle ) 
+}
+
 # We're going to copy users in batches.  We'll just use the REST API paging to
 # do this.
 $pagingParams = @{
@@ -82,7 +93,7 @@ do {
     # Connect to source    
     Connect-MITServer -Hostname $SrcHostname -Credential $SrcCredential
 
-    Write-Host "Fetching users from $SrcHostname)"
+    Write-Host "Fetching users from $SrcHostname"
 
     # Get a list of some users
     $paging, $userList = Get-MITUser @pagingParams
@@ -133,7 +144,7 @@ do {
                 Username            = $srcUser.username
                 Fullname            = $srcUser.fullname
                 Email               = $srcUser.email
-                Password            = $DefaultPassword
+                Password            = ($NewPassword) ? $NewPassword : (New-RandomPassword)
                 ForceChangePassword = $true
                 Permission          = $srcUser.permission
                 HomeFolderPath      = $srcUser.homeFolderPath
