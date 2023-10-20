@@ -1,4 +1,4 @@
-#Requires -Modules MOVEit.MIT
+#Requires -Modules @{ ModuleName="MOVEit.MIT"; ModuleVersion="0.4.5" } 
 #Requires -Version 7
 
 <#
@@ -39,19 +39,11 @@ try {
     
      # Get all the users from the dst since we'll use this for group member stuff.
      "Fetching all users from $DstHostname"
-     $page = 1
-     $dstUserList = do {
-         $paging, $userList = Get-MITUser -IncludePaging -Page $page -PerPage 100
-         $userList
-     } while ($page++ -lt $paging.totalPages)
+     $dstUserList = Get-MITUser -All
  
      # Get all the groups from the dst to check if the group already exists
      "Fetching all groups from $DstHostname"
-     $page = 1
-     $dstGroupList = do {
-         $paging, $groupList = Get-MITGroup -IncludePaging -Page $page -PerPage 100
-         $groupList
-     } while ($page++ -lt $paging.totalPages)
+     $dstGroupList = Get-MITGroup -All
      
      Disconnect-MITServer | Out-Null
 
@@ -101,7 +93,7 @@ do {
 
     # Get the group members of each groups too.
     $srcGroupList = $groupList  | ForEach-Object {
-        $groupMember = Get-MITGroupMember -GroupId $_.id
+        $groupMember = Get-MITGroupMember -All -GroupId $_.id
         $_ | Add-Member -MemberType NoteProperty -Name 'member' -Value $groupMember
         $_
     }
@@ -142,7 +134,7 @@ do {
                 $dstUserList | Where-Object {$_.username -eq $member.username}
             }
 
-            $dstGroup | Add-MITGroupMember -UserIds $newGroupMembers.id | Out-Null
+            $dstGroup | Add-MITGroupMember -IncludePaging -UserIds $newGroupMembers.id | Out-Null
             "Group $($dstGroup.name) added $($newGroupMembers.Count) members"
             
             $stats.created++

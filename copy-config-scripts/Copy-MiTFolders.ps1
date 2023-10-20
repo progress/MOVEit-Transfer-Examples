@@ -1,4 +1,4 @@
-#Requires -Modules MOVEit.MIT
+#Requires -Modules @{ ModuleName="MOVEit.MIT"; ModuleVersion="0.4.5" }
 #Requires -Version 7
 
 <#
@@ -37,19 +37,11 @@ try {
 
     # Get all the users from the source since we'll use this for acl stuff.
     "Fetching all users from $SrcHostname"
-    $page = 1
-    $srcUserList = do {
-        $paging, $userList = Get-MITUser -IncludePaging -Page $page -PerPage 100
-        $userList
-    } while ($page++ -lt $paging.totalPages)
+    $srcUserList = Get-MITUser -All
 
     # Get all the groups from the source since we'll use this for acl stuff.
     "Fetching all groups from $SrcHostname"
-    $page = 1
-    $srcGroupList = do {
-        $paging, $userList = Get-MITGroup -IncludePaging -Page $page -PerPage 100
-        $userList
-    } while ($page++ -lt $paging.totalPages)
+    $srcGroupList = Get-MITGroup -All
 
     Disconnect-MITServer | Out-Null
 
@@ -57,19 +49,11 @@ try {
 
      # Get all the users from the dst since we'll use this for acls.
      "Fetching all users from $DstHostname"
-     $page = 1
-     $dstUserList = do {
-         $paging, $userList = Get-MITUser -IncludePaging -Page $page -PerPage 100
-         $userList
-     } while ($page++ -lt $paging.totalPages)
+     $dstUserList = Get-MITUser -All
  
      # Get all the groups from the dst since we'll use this for acls
      "Fetching all groups from $DstHostname"
-     $page = 1
-     $dstGroupList = do {
-         $paging, $groupList = Get-MITGroup -IncludePaging -Page $page -PerPage 100
-         $groupList
-     } while ($page++ -lt $paging.totalPages)
+     $dstGroupList = Get-MITGroup -All
 
     Disconnect-MITServer | Out-Null
 
@@ -94,7 +78,22 @@ $stats = [pscustomobject]@{
     exists  = 0
     error   = 0
     acl     = 0
+    aclexists = 0
     aclerror = 0
+}
+
+# Function to convert the folder permissions to a hashtable
+function Convert-PermissionsToHashtable {
+    param ([PSCustomObject]$Permissions)
+
+    $ht = @{}
+    foreach ($property in $Permissions.psobject.properties.name) {
+        $ht[$property] = switch ($property) {
+            'sharePermissions' {Convert-PermissionsToHashtable $Permissions.$property}
+            default            {$Permissions.$property}             
+        }
+    }
+    return $ht
 }
 
 # We're going to copy folders in batches.  We'll just use the REST API paging to
@@ -123,13 +122,13 @@ do {
     # to the destination.  
     $srcFolderList = $folderList  | ForEach-Object {
         $folder = Get-MITFolder -FolderId $_.id
-        $folderAcl = Get-MITFolderAcl -FolderId $_.id
+        $folderAcl = Get-MITFolderAcl -All -FolderId $_.id
         $folder | Add-Member -MemberType NoteProperty -Name 'acl' -Value $folderAcl
         $folder
     }
 
     # Disconnect from source
-    Disconnect-MITServer
+    Disconnect-MITServer | Out-Null
 
     ### D E S T I N A T I O N ###
 
@@ -182,6 +181,9 @@ do {
         }
 
         # Now let's update the user and group acls.
+        # Get any existing acls on the dstFolder
+        $dstFolderAcl = $dstFolder | Get-MITFolderAcl -All
+
         foreach ($acl in $srcFolder.acl | Where-Object { $_.type -in 'User','Group' -and $_.isEditable} ){
             try {
 
@@ -204,22 +206,22 @@ do {
                 if (-not $typeId) {
                     Write-Error "Unable to find $($acl.type) for $($acl.name) acl" -ErrorAction Stop
                 }
+
+                # Check if there is already an acl for this type and user
+                if (${dstFolderAcl}?.where({$_.type -eq $acl.type -and $_.id -eq $typeid})) {
+                    Write-Warning  "Folder $($dstFolder.path) acl for $($acl.type) $($acl.name) already exists"
+                    $stats.aclexists++
+                    continue
+                }
                             
                 $dstFolderAclSplat = @{
-                    Type                = $acl.type
-                    TypeId              = $typeId
-                    ReadFiles           = $acl.permissions.readFiles
-                    WriteFiles          = $acl.permissions.WriteFiles
-                    DeleteFiles         = $acl.permissions.deleteFiles
-                    ListFiles           = $acl.permissions.listFiles
-                    Notify              = $acl.permissions.notify
-                    AddDeleteSubfolders = $acl.permissions.addDeleteSubfolders
-                    Share               = $acl.permissions.share
-                    Admin               = $acl.permissions.admin
-                    ListUsers           = $acl.permissions.listUsers
+                    Type        = $acl.type
+                    TypeId      = $typeId                    
+                    Permissions = Convert-PermissionsToHashtable -Permissions $acl.permissions
                 }
                 
-                $dstFolder | Set-MITFolderAcl @dstFolderAclSplat | Out-Null   
+                $dstFolder | Set-MITFolderAcl @dstFolderAclSplat | Out-Null
+                "Folder $($dstFolder.path) acl for $($acl.type) $($acl.name) set."   
                 $stats.acl++             
             }
             catch {
