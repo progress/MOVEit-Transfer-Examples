@@ -1,0 +1,10 @@
+<reportexport>
+    <name>Files By Age</name>
+    <fields>files.id AS FileID, CONCAT(folders.FolderPath, &#039;/&#039;, files.Name) AS Path,
+        files.UploadStamp, DATEDIFF(day, files.UploadStamp, GETDATE()) AS DaysOld</fields>
+    <tables>files LEFT JOIN folders ON (files.FolderID = folders.ID)</tables>
+    <criteria>files.Deleted = 0 AND folders.FolderType =4</criteria>
+    <grouping />
+    <order>DaysOld asc</order>
+    <limit />
+</reportexport>
