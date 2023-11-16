@@ -6,6 +6,7 @@
     notification and optionally override the force change password behavior.
 .NOTES
     Prompts for confirmation
+    Only includes EndUsers
 .COMPONENT
     Requires the MOVEit.MIT module
     Install-Module -Name MOVEit.MIT
@@ -56,7 +57,7 @@ function New-RandomPassword  {
 try { Connect-MITServer -Hostname $hostname -Credential $Credential } catch { throw }
 
 # Get the list of users and output them
-($userList = Get-MITUser -Username $Username -IsExactMatch:$IsExactMatch)
+($userList = Get-MITUser -Username $Username -IsExactMatch:$IsExactMatch -Permission EndUsers)
 
 # Process each user
 $userList | ForEach-Object {
